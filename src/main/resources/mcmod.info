@@ -1,0 +1,15 @@
+[
+  {
+    "modid": "jumpreset",
+    "name": "Jump Reset",
+    "description": "Jump reset automatico com modos Blatant / Semi Blatant / Legit e velocity configuravel.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "url": "",
+    "authorList": ["Neymar Jr"],
+    "credits": "",
+    "logoFile": "",
+    "screenshots": [],
+    "dependencies": []
+  }
+]
