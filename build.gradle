@@ -1,10 +1,14 @@
+
 buildscript {
     repositories {
         mavenCentral()
-        maven { name = "forge"; url = "https://maven.minecraftforge.net/" }
+        maven {
+            name = "forge"
+            url = "https://maven.minecraftforge.net/"
+        }
     }
     dependencies {
-        classpath 'com.anatawa12.forge:ForgeGradle:2.1-1.0.10'
+        classpath 'net.minecraftforge.gradle:ForgeGradle:2.1-SNAPSHOT'
     }
 }
 
@@ -15,6 +19,7 @@ group = project.modGroup
 archivesBaseName = project.modName
 
 sourceCompatibility = targetCompatibility = "1.8"
+
 compileJava {
     sourceCompatibility = targetCompatibility = "1.8"
     options.encoding = "UTF-8"
@@ -32,8 +37,10 @@ minecraft {
 processResources {
     inputs.property "version", project.version
     inputs.property "mcversion", project.minecraft.version
+
     from(sourceSets.main.resources.srcDirs) {
         include "mcmod.info"
-        expand "version": project.version, "mcversion": project.minecraft.version
+        expand "version": project.modVersion,
+               "mcversion": project.minecraft.version
     }
 }
