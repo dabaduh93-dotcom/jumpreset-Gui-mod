@@ -30,8 +30,7 @@ public class JumpResetMod {
     public static final String VERSION = "@VERSION@";
 
     public enum Mode {
-        // velocityFactor = fracao do KB horizontal que PERMANECE
-        BLATANT("Blatant", 0.40D, 0.03D),        // mantem 40% = reduz 60%
+        BLATANT("Blatant", 0.00D, 0.00D),
         SEMI_BLATANT("Semi Blatant", 0.85D, 0.04D),
         LEGIT("Legit", 0.90D, 0.03D);
 
@@ -53,18 +52,25 @@ public class JumpResetMod {
 
     // ---- estado ----
     public static boolean enabled = true;
-    public static Mode mode = Mode.LEGIT;
+    public static Mode mode = Mode.BLATANT;
     public static boolean velocityEnabled = true;
 
-    public static int blatantKeep = 40;          // % do KB horizontal que permanece no Blatant
-    public static boolean velocityRandomize = true;
-    public static int velocityMissChance = 12;   // % de hits sem reducao (disfarce)
+    // Blatant: 0 = antikb total (KB zerado), 100 = sem reducao
+    public static int blatantKeep = 0;
+    public static boolean blatantAntiY = true;     // mata o "pulinho" do hit
+    public static int antikbHold = 4;              // ticks segurando o KB em 0
 
-    public static int chance = 100;              // chance de tentar o perfect jump
-    public static int accuracy = 100;            // chance do timing sair perfeito
+    public static boolean velocityRandomize = true;
+    public static int velocityMissChance = 0;      // % de hits que passam sem reducao
+
+    public static int chance = 100;
+    public static int accuracy = 100;
+    public static boolean instantJump = true;      // pula no MESMO tick do hit
     public static boolean onlyWhenTargeting = false;
+    public static boolean nearbyPlayerCheck = true; // so conta hit de jogador perto
     public static boolean waterCheck = true;
-    public static int delay = 0;                 // ticks (ignorado no Blatant)
+    public static int delay = 0;
+    public static double knockbackThreshold = 0.12D;
 
     public static KeyBinding toggleKey;
     public static KeyBinding guiKey;
@@ -83,33 +89,44 @@ public class JumpResetMod {
         enabled = config.get(cat, "enabled", true,
                 "Mod ligado ao entrar no mundo").getBoolean();
 
-        String modeName = config.get(cat, "mode", Mode.LEGIT.name(),
+        String modeName = config.get(cat, "mode", Mode.BLATANT.name(),
                 "BLATANT / SEMI_BLATANT / LEGIT").getString();
         try {
             mode = Mode.valueOf(modeName.toUpperCase());
         } catch (IllegalArgumentException e) {
-            mode = Mode.LEGIT;
+            mode = Mode.BLATANT;
         }
 
         velocityEnabled = config.get(cat, "velocityEnabled", true,
-                "Aplica a reducao de knockback do modo").getBoolean();
-        blatantKeep = config.getInt("blatantKeep", cat, 40, 0, 100,
-                "Blatant: % do KB horizontal que permanece (40 = reduz 60%)");
+                "Aplica a reducao de knockback").getBoolean();
+        blatantKeep = config.getInt("blatantKeep", cat, 0, 0, 100,
+                "Blatant: % do KB horizontal que permanece (0 = antikb total)");
+        blatantAntiY = config.get(cat, "blatantAntiY", true,
+                "Blatant: cancela o impulso vertical do hit").getBoolean();
+        antikbHold = config.getInt("antikbHold", cat, 4, 0, 10,
+                "Ticks de antikb apos o hit (mata o KB residual)");
+
         velocityRandomize = config.get(cat, "velocityRandomize", true,
-                "Sorteia o fator de reducao a cada hit").getBoolean();
-        velocityMissChance = config.getInt("velocityMissChance", cat, 12, 0, 50,
-                "% de hits em que o velocity nao aplica (disfarce)");
+                "Sorteia o fator de reducao por hit").getBoolean();
+        velocityMissChance = config.getInt("velocityMissChance", cat, 0, 0, 50,
+                "% de hits sem reducao (disfarce)");
 
         chance = config.getInt("chance", cat, 100, 0, 100,
-                "Chance de tentar o perfect jump no hit");
+                "Chance de tentar o perfect jump");
         accuracy = config.getInt("accuracy", cat, 100, 0, 100,
-                "Chance do timing do pulo sair perfeito");
+                "Chance do timing sair perfeito");
+        instantJump = config.get(cat, "instantJump", true,
+                "Pula no mesmo tick do hit (sem atraso)").getBoolean();
         onlyWhenTargeting = config.get(cat, "onlyWhenTargeting", false,
-                "So ativa quando o oponente esta perto do crosshair").getBoolean();
+                "So ativa quando o oponente esta no crosshair").getBoolean();
+        nearbyPlayerCheck = config.get(cat, "nearbyPlayerCheck", true,
+                "So conta como hit se houver jogador por perto").getBoolean();
         waterCheck = config.get(cat, "waterCheck", true,
                 "Nao ativa na agua/lava").getBoolean();
         delay = config.getInt("delay", cat, 0, 0, 5,
-                "Ticks de espera antes de pular (Blatant ignora)");
+                "Ticks de espera (ignorado com Instant Jump)");
+        knockbackThreshold = config.get(cat, "knockbackThreshold", 0.12D,
+                "Velocidade horizontal minima para considerar hit real").getDouble();
 
         if (config.hasChanged()) {
             config.save();
@@ -119,16 +136,21 @@ public class JumpResetMod {
     public static void saveConfig() {
         String cat = Configuration.CATEGORY_GENERAL;
         config.get(cat, "enabled", true).set(enabled);
-        config.get(cat, "mode", Mode.LEGIT.name()).set(mode.name());
+        config.get(cat, "mode", Mode.BLATANT.name()).set(mode.name());
         config.get(cat, "velocityEnabled", true).set(velocityEnabled);
-        config.get(cat, "blatantKeep", 40).set(blatantKeep);
+        config.get(cat, "blatantKeep", 0).set(blatantKeep);
+        config.get(cat, "blatantAntiY", true).set(blatantAntiY);
+        config.get(cat, "antikbHold", 4).set(antikbHold);
         config.get(cat, "velocityRandomize", true).set(velocityRandomize);
-        config.get(cat, "velocityMissChance", 12).set(velocityMissChance);
+        config.get(cat, "velocityMissChance", 0).set(velocityMissChance);
         config.get(cat, "chance", 100).set(chance);
         config.get(cat, "accuracy", 100).set(accuracy);
+        config.get(cat, "instantJump", true).set(instantJump);
         config.get(cat, "onlyWhenTargeting", false).set(onlyWhenTargeting);
+        config.get(cat, "nearbyPlayerCheck", true).set(nearbyPlayerCheck);
         config.get(cat, "waterCheck", true).set(waterCheck);
         config.get(cat, "delay", 0).set(delay);
+        config.get(cat, "knockbackThreshold", 0.12D).set(knockbackThreshold);
         config.save();
     }
 
