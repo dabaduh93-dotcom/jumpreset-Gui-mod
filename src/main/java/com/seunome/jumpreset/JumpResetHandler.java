@@ -21,47 +21,73 @@ public class JumpResetHandler {
     private static final Random RANDOM = new Random();
 
     private static final double TARGET_RANGE = 4.5D;
-    private static final double TARGET_DOT = 0.5D;   // ~60 graus do crosshair
-    private static final int GIVE_UP_TICKS = 12;
+    private static final double TARGET_DOT = 0.5D;      // ~60 graus do crosshair
+    private static final double NEARBY_RANGE = 5.0D;
+    private static final int GIVE_UP_TICKS = 8;
 
     private int lastHurtTime;
     private int pendingJump = -1;
-    private boolean pendingPerfect;
     private int waitTicks;
     private int jumpHoldTicks;
+    private int antikbTicks;
+    private boolean jumpedForHit;
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
-            return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (event.phase == TickEvent.Phase.START) {
+            tickStart(mc);
+        } else {
+            tickEnd(mc);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // START: detecta o hit ANTES do update da entidade -> pula no tick certo
+    // ------------------------------------------------------------------
+    private void tickStart(Minecraft mc) {
+        if (jumpHoldTicks > 0) {
+            jumpHoldTicks--;
+            if (jumpHoldTicks == 0) {
+                KeyBinding.setKeyBindState(mc.gameSettings.keyBindJump.getKeyCode(), false);
+            }
         }
 
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.thePlayer == null || mc.theWorld == null) {
+        EntityPlayerSP player = mc.thePlayer;
+        if (player == null || mc.theWorld == null) {
+            releaseJumpKey(mc);
             reset();
             lastHurtTime = 0;
             return;
         }
 
-        EntityPlayerSP player = mc.thePlayer;
-
-        // libera a tecla de pulo simulada (modo Legit)
-        if (jumpHoldTicks > 0 && --jumpHoldTicks == 0) {
-            KeyBinding.setKeyBindState(mc.gameSettings.keyBindJump.getKeyCode(), false);
-        }
+        tickAntikb(player);
 
         if (!JumpResetMod.enabled) {
+            releaseJumpKey(mc);
             reset();
+            jumpedForHit = false;
             lastHurtTime = player.hurtTime;
             return;
         }
 
-        // hurtTime so sobe quando entra dano novo -> detecta o hit
         if (player.hurtTime > lastHurtTime) {
+            jumpedForHit = false;
+            pendingJump = -1;
+            waitTicks = 0;
             onHit(mc, player);
         }
         lastHurtTime = player.hurtTime;
+    }
 
+    // ------------------------------------------------------------------
+    // END: apenas para os pulos que nao puderam sair no tick do hit
+    // ------------------------------------------------------------------
+    private void tickEnd(Minecraft mc) {
+        EntityPlayerSP player = mc.thePlayer;
+        if (player == null || !JumpResetMod.enabled) {
+            return;
+        }
         if (pendingJump < 0) {
             return;
         }
@@ -75,9 +101,8 @@ public class JumpResetHandler {
             }
             return;
         }
-
         performJump(mc, player);
-        reset();
+        pendingJump = -1;
     }
 
     @SubscribeEvent
@@ -91,7 +116,11 @@ public class JumpResetHandler {
     }
 
     private void onHit(Minecraft mc, EntityPlayerSP player) {
-        // ---- Velocity ----
+        // velocidade horizontal antes de mexer (para saber se foi hit de verdade)
+        double rawHorizontal = Math.sqrt(player.motionX * player.motionX
+                + player.motionZ * player.motionZ);
+
+        // ---- velocity / antikb (sempre aplica, inclusive hit de mob) ----
         if (JumpResetMod.velocityEnabled) {
             if (JumpResetMod.mode == JumpResetMod.Mode.BLATANT) {
                 applyBlatantVelocity(player);
@@ -100,55 +129,93 @@ public class JumpResetHandler {
             }
         }
 
-        // ---- filtros estilo Vape ----
+        // ---- filtros: so conta hit de jogador real ----
+        if (JumpResetMod.knockbackThreshold > 0.0D && rawHorizontal < JumpResetMod.knockbackThreshold) {
+            return; // queda, fogo, afogamento: sem knockback
+        }
+        if (JumpResetMod.nearbyPlayerCheck && !isPlayerNear(mc, player, NEARBY_RANGE)) {
+            return; // nenhum jogador por perto -> nao foi hit de jogador
+        }
         if (JumpResetMod.waterCheck && (player.isInWater() || player.isInLava())) {
             return;
         }
         if (JumpResetMod.onlyWhenTargeting && !isTargeting(mc, player)) {
             return;
         }
+        if (player.capabilities.isFlying) {
+            return;
+        }
 
-        // ---- Chance ----
         if (RANDOM.nextInt(100) >= JumpResetMod.chance) {
             return;
         }
 
-        // ---- Accuracy ----
-        pendingPerfect = RANDOM.nextInt(100) < JumpResetMod.accuracy;
+        boolean perfect = RANDOM.nextInt(100) < JumpResetMod.accuracy;
 
-        if (pendingPerfect) {
-            pendingJump = (JumpResetMod.mode == JumpResetMod.Mode.BLATANT) ? 0 : JumpResetMod.delay;
+        if (perfect) {
+            if (JumpResetMod.instantJump && canJump(player)) {
+                performJump(mc, player);   // MESMO tick: sem atraso
+                pendingJump = -1;
+            } else {
+                pendingJump = JumpResetMod.instantJump ? 0 : JumpResetMod.delay;
+                waitTicks = 0;
+            }
         } else {
-            pendingJump = 2 + RANDOM.nextInt(4); // pula, mas atrasado: sem reducao
+            // timing errado de proposito (Accuracy): pula atrasado, KB nao cai
+            pendingJump = 2 + RANDOM.nextInt(3);
+            waitTicks = 0;
         }
-        waitTicks = 0;
     }
 
     /**
-     * Blatant: mantem ~40% do KB horizontal (reducao de 60%), SEM tocar no vertical.
-     * Faixa sorteada por hit + miss ocasional para nao virar valor fixo.
+     * Blatant: antikb. Zera o KB horizontal e o pulinho do hit.
+     * fica segurando por antikbHold ticks para pegar o packet de velocity atrasado.
      */
     private void applyBlatantVelocity(EntityPlayerSP player) {
         if (RANDOM.nextInt(100) < JumpResetMod.velocityMissChance) {
-            return; // KB integral: parece jump reset que nao saiu
+            return;
         }
 
-        double base = JumpResetMod.blatantKeep / 100.0D;              // 0.40
-        double factor = base + (RANDOM.nextDouble() * 2 - 1) * 0.03D; // 0.37 .. 0.43
+        antikbTicks = JumpResetMod.antikbHold;
 
-        double angle = Math.toRadians((RANDOM.nextDouble() * 2.0D) - 1.0D); // -1..+1 grau
-        double cos = Math.cos(angle);
-        double sin = Math.sin(angle);
+        double keep = JumpResetMod.blatantKeep / 100.0D;
+        player.motionX *= keep;
+        player.motionZ *= keep;
 
-        double mx = player.motionX * factor;
-        double mz = player.motionZ * factor;
-
-        player.motionX = mx * cos - mz * sin;
-        player.motionZ = mx * sin + mz * cos;
-        // motionY intocado de proposito
+        // mata o impulso vertical do hit (senao voce sai do chao e o pulo atrasa)
+        if (JumpResetMod.blatantAntiY && player.motionY > 0.0D) {
+            player.motionY = 0.0D;
+        }
     }
 
-    /** Semi/Legit: reducao suave e disfarcada (usa o fator do modo + randomizacao). */
+    private void tickAntikb(EntityPlayerSP player) {
+        if (antikbTicks <= 0) {
+            return;
+        }
+        antikbTicks--;
+
+        if (JumpResetMod.mode != JumpResetMod.Mode.BLATANT) {
+            return;
+        }
+
+        boolean hasInput = player.movementInput.moveForward != 0.0F
+                || player.movementInput.moveStrafe != 0.0F;
+
+        if (!hasInput) {
+            double keep = JumpResetMod.blatantKeep / 100.0D;
+            player.motionX *= keep;
+            player.motionZ *= keep;
+
+            if (JumpResetMod.blatantAntiY
+                    && !jumpedForHit
+                    && !player.onGround
+                    && player.motionY > 0.0D) {
+                player.motionY = 0.0D;
+            }
+        }
+    }
+
+    /** Semi / Legit: reducao disfarcada com fator sorteado. */
     private void applyLegitVelocity(EntityPlayerSP player) {
         if (RANDOM.nextInt(100) < JumpResetMod.velocityMissChance) {
             return;
@@ -157,7 +224,7 @@ public class JumpResetHandler {
         double factor;
         if (JumpResetMod.velocityRandomize) {
             double range = JumpResetMod.mode.randomizeRange;
-            factor = JumpResetMod.mode.velocityFactor + (RANDOM.nextDouble() * 2 - 1) * range;
+            factor = JumpResetMod.mode.velocityFactor + (RANDOM.nextDouble() * 2.0D - 1.0D) * range;
         } else {
             factor = JumpResetMod.mode.velocityFactor;
         }
@@ -166,7 +233,7 @@ public class JumpResetHandler {
         double mz = player.motionZ * factor;
 
         if (JumpResetMod.velocityRandomize) {
-            double angle = Math.toRadians((RANDOM.nextDouble() * 4.0D) - 2.0D); // -2..+2 graus
+            double angle = Math.toRadians((RANDOM.nextDouble() * 4.0D) - 2.0D);
             double cos = Math.cos(angle);
             double sin = Math.sin(angle);
             double nx = mx * cos - mz * sin;
@@ -178,7 +245,6 @@ public class JumpResetHandler {
         player.motionX = mx;
         player.motionZ = mz;
 
-        // vertical: variacao maxima de 2%, ocasional
         if (JumpResetMod.velocityRandomize && RANDOM.nextInt(4) == 0) {
             player.motionY *= 1.0D + (RANDOM.nextDouble() * 0.04D - 0.02D);
         }
@@ -189,15 +255,16 @@ public class JumpResetHandler {
                 && !player.isInWater()
                 && !player.isInLava()
                 && !player.isRiding()
-                && !player.capabilities.isFlying
-                && !player.capabilities.allowFlying;
+                && !player.capabilities.isFlying;
     }
 
     private void performJump(Minecraft mc, EntityPlayerSP player) {
+        jumpedForHit = true;
+
         if (JumpResetMod.mode == JumpResetMod.Mode.LEGIT) {
-            // segura a tecla de pulo por 2 ticks, igual a um jogador apertando espaco
+            // segura a tecla por 1 tick: o pulo sai no onLivingUpdate deste tick
             KeyBinding.setKeyBindState(mc.gameSettings.keyBindJump.getKeyCode(), true);
-            jumpHoldTicks = 2;
+            jumpHoldTicks = 1;
             return;
         }
 
@@ -207,6 +274,25 @@ public class JumpResetHandler {
             player.setSprinting(true);
         }
         player.jump();
+    }
+
+    private void releaseJumpKey(Minecraft mc) {
+        if (jumpHoldTicks > 0) {
+            jumpHoldTicks = 0;
+            KeyBinding.setKeyBindState(mc.gameSettings.keyBindJump.getKeyCode(), false);
+        }
+    }
+
+    private boolean isPlayerNear(Minecraft mc, EntityPlayerSP player, double range) {
+        List<Entity> entities = mc.theWorld.getEntitiesWithinAABBExcludingEntity(
+                player, player.getEntityBoundingBox().expand(range, range, range));
+
+        for (Entity entity : entities) {
+            if (entity instanceof EntityPlayer && entity != player) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isTargeting(Minecraft mc, EntityPlayerSP player) {
@@ -234,4 +320,4 @@ public class JumpResetHandler {
         pendingJump = -1;
         waitTicks = 0;
     }
-              }
+}
