@@ -55,19 +55,19 @@ public class JumpResetMod {
     public static Mode mode = Mode.BLATANT;
     public static boolean velocityEnabled = true;
 
-    // Blatant: 0 = antikb total (KB zerado), 100 = sem reducao
-    public static int blatantKeep = 0;
-    public static boolean blatantAntiY = true;     // mata o "pulinho" do hit
-    public static int antikbHold = 4;              // ticks segurando o KB em 0
+    // Blatant: % do KB horizontal que permanece. 0 = antikb total, 60 = preset bypass Grim
+    public static int blatantKeep = 60;
+    public static boolean blatantAntiY = false;    // ON só fora de servidor com Grim
+    public static int antikbHold = 2;
 
     public static boolean velocityRandomize = true;
-    public static int velocityMissChance = 0;      // % de hits que passam sem reducao
+    public static int velocityMissChance = 15;
 
     public static int chance = 100;
     public static int accuracy = 100;
-    public static boolean instantJump = true;      // pula no MESMO tick do hit
+    public static boolean instantJump = true;
     public static boolean onlyWhenTargeting = false;
-    public static boolean nearbyPlayerCheck = true; // so conta hit de jogador perto
+    public static boolean nearbyPlayerCheck = true;
     public static boolean waterCheck = true;
     public static int delay = 0;
     public static double knockbackThreshold = 0.12D;
@@ -99,16 +99,16 @@ public class JumpResetMod {
 
         velocityEnabled = config.get(cat, "velocityEnabled", true,
                 "Aplica a reducao de knockback").getBoolean();
-        blatantKeep = config.getInt("blatantKeep", cat, 0, 0, 100,
+        blatantKeep = config.getInt("blatantKeep", cat, 60, 0, 100,
                 "Blatant: % do KB horizontal que permanece (0 = antikb total)");
-        blatantAntiY = config.get(cat, "blatantAntiY", true,
-                "Blatant: cancela o impulso vertical do hit").getBoolean();
-        antikbHold = config.getInt("antikbHold", cat, 4, 0, 10,
-                "Ticks de antikb apos o hit (mata o KB residual)");
+        blatantAntiY = config.get(cat, "blatantAntiY", false,
+                "Blatant: cancela o impulso vertical do hit (flag no Grim)").getBoolean();
+        antikbHold = config.getInt("antikbHold", cat, 2, 0, 10,
+                "Ticks de antikb apos o hit");
 
         velocityRandomize = config.get(cat, "velocityRandomize", true,
                 "Sorteia o fator de reducao por hit").getBoolean();
-        velocityMissChance = config.getInt("velocityMissChance", cat, 0, 0, 50,
+        velocityMissChance = config.getInt("velocityMissChance", cat, 15, 0, 50,
                 "% de hits sem reducao (disfarce)");
 
         chance = config.getInt("chance", cat, 100, 0, 100,
@@ -138,11 +138,11 @@ public class JumpResetMod {
         config.get(cat, "enabled", true).set(enabled);
         config.get(cat, "mode", Mode.BLATANT.name()).set(mode.name());
         config.get(cat, "velocityEnabled", true).set(velocityEnabled);
-        config.get(cat, "blatantKeep", 0).set(blatantKeep);
-        config.get(cat, "blatantAntiY", true).set(blatantAntiY);
-        config.get(cat, "antikbHold", 4).set(antikbHold);
+        config.get(cat, "blatantKeep", 60).set(blatantKeep);
+        config.get(cat, "blatantAntiY", false).set(blatantAntiY);
+        config.get(cat, "antikbHold", 2).set(antikbHold);
         config.get(cat, "velocityRandomize", true).set(velocityRandomize);
-        config.get(cat, "velocityMissChance", 0).set(velocityMissChance);
+        config.get(cat, "velocityMissChance", 15).set(velocityMissChance);
         config.get(cat, "chance", 100).set(chance);
         config.get(cat, "accuracy", 100).set(accuracy);
         config.get(cat, "instantJump", true).set(instantJump);
