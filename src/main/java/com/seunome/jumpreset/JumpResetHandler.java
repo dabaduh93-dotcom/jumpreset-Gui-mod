@@ -21,7 +21,7 @@ public class JumpResetHandler {
     private static final Random RANDOM = new Random();
 
     private static final double TARGET_RANGE = 4.5D;
-    private static final double TARGET_DOT = 0.5D;      // ~60 graus do crosshair
+    private static final double TARGET_DOT = 0.5D;
     private static final double NEARBY_RANGE = 5.0D;
     private static final int GIVE_UP_TICKS = 8;
 
@@ -31,6 +31,13 @@ public class JumpResetHandler {
     private int jumpHoldTicks;
     private int antikbTicks;
     private boolean jumpedForHit;
+    private boolean groundedAtHit;
+
+    // deteccao de setback (Grim devolve sua posicao)
+    private double lastPosX;
+    private double lastPosY;
+    private double lastPosZ;
+    private boolean hasLastPos;
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
@@ -42,9 +49,6 @@ public class JumpResetHandler {
         }
     }
 
-    // ------------------------------------------------------------------
-    // START: detecta o hit ANTES do update da entidade -> pula no tick certo
-    // ------------------------------------------------------------------
     private void tickStart(Minecraft mc) {
         if (jumpHoldTicks > 0) {
             jumpHoldTicks--;
@@ -58,8 +62,24 @@ public class JumpResetHandler {
             releaseJumpKey(mc);
             reset();
             lastHurtTime = 0;
+            hasLastPos = false;
             return;
         }
+
+        // setback: se a posicao deu um salto grande, limpa o estado
+        if (hasLastPos) {
+            double dx = player.posX - lastPosX;
+            double dy = player.posY - lastPosY;
+            double dz = player.posZ - lastPosZ;
+            if (dx * dx + dy * dy + dz * dz > 9.0D) {
+                reset();
+                antikbTicks = 0;
+            }
+        }
+        lastPosX = player.posX;
+        lastPosY = player.posY;
+        lastPosZ = player.posZ;
+        hasLastPos = true;
 
         tickAntikb(player);
 
@@ -80,9 +100,6 @@ public class JumpResetHandler {
         lastHurtTime = player.hurtTime;
     }
 
-    // ------------------------------------------------------------------
-    // END: apenas para os pulos que nao puderam sair no tick do hit
-    // ------------------------------------------------------------------
     private void tickEnd(Minecraft mc) {
         EntityPlayerSP player = mc.thePlayer;
         if (player == null || !JumpResetMod.enabled) {
@@ -116,11 +133,9 @@ public class JumpResetHandler {
     }
 
     private void onHit(Minecraft mc, EntityPlayerSP player) {
-        // velocidade horizontal antes de mexer (para saber se foi hit de verdade)
         double rawHorizontal = Math.sqrt(player.motionX * player.motionX
                 + player.motionZ * player.motionZ);
 
-        // ---- velocity / antikb (sempre aplica, inclusive hit de mob) ----
         if (JumpResetMod.velocityEnabled) {
             if (JumpResetMod.mode == JumpResetMod.Mode.BLATANT) {
                 applyBlatantVelocity(player);
@@ -129,12 +144,11 @@ public class JumpResetHandler {
             }
         }
 
-        // ---- filtros: so conta hit de jogador real ----
         if (JumpResetMod.knockbackThreshold > 0.0D && rawHorizontal < JumpResetMod.knockbackThreshold) {
-            return; // queda, fogo, afogamento: sem knockback
+            return;
         }
         if (JumpResetMod.nearbyPlayerCheck && !isPlayerNear(mc, player, NEARBY_RANGE)) {
-            return; // nenhum jogador por perto -> nao foi hit de jogador
+            return;
         }
         if (JumpResetMod.waterCheck && (player.isInWater() || player.isInLava())) {
             return;
@@ -154,68 +168,71 @@ public class JumpResetHandler {
 
         if (perfect) {
             if (JumpResetMod.instantJump && canJump(player)) {
-                performJump(mc, player);   // MESMO tick: sem atraso
+                performJump(mc, player);
                 pendingJump = -1;
             } else {
                 pendingJump = JumpResetMod.instantJump ? 0 : JumpResetMod.delay;
                 waitTicks = 0;
             }
         } else {
-            // timing errado de proposito (Accuracy): pula atrasado, KB nao cai
             pendingJump = 2 + RANDOM.nextInt(3);
             waitTicks = 0;
         }
     }
 
-    /**
-     * Blatant: antikb. Zera o KB horizontal e o pulinho do hit.
-     * fica segurando por antikbHold ticks para pegar o packet de velocity atrasado.
-     */
     private void applyBlatantVelocity(EntityPlayerSP player) {
         if (RANDOM.nextInt(100) < JumpResetMod.velocityMissChance) {
             return;
         }
 
         antikbTicks = JumpResetMod.antikbHold;
+        groundedAtHit = player.onGround;
 
         double keep = JumpResetMod.blatantKeep / 100.0D;
         player.motionX *= keep;
         player.motionZ *= keep;
 
-        // mata o impulso vertical do hit (senao voce sai do chao e o pulo atrasa)
-        if (JumpResetMod.blatantAntiY && player.motionY > 0.0D) {
+        // vertical: SO se estiver no chao no hit (nunca no ar -> evita setback do Grim)
+        if (JumpResetMod.blatantAntiY && player.onGround && player.motionY > 0.0D) {
             player.motionY = 0.0D;
         }
     }
 
+    /**
+     * Hold do antikb. Regras para nao quebrar a predicao do Grim:
+     *  - nunca mexe em motionY com o player no ar
+     *  - so anula o horizontal quando voce nao esta dando input
+     *  - se voce pulou no hit, nao encosta no movimento
+     */
     private void tickAntikb(EntityPlayerSP player) {
         if (antikbTicks <= 0) {
             return;
         }
         antikbTicks--;
 
-        if (JumpResetMod.mode != JumpResetMod.Mode.BLATANT) {
+        if (JumpResetMod.mode != JumpResetMod.Mode.BLATANT || jumpedForHit) {
             return;
         }
 
         boolean hasInput = player.movementInput.moveForward != 0.0F
                 || player.movementInput.moveStrafe != 0.0F;
 
-        if (!hasInput) {
-            double keep = JumpResetMod.blatantKeep / 100.0D;
-            player.motionX *= keep;
-            player.motionZ *= keep;
+        if (hasInput) {
+            return;
+        }
 
-            if (JumpResetMod.blatantAntiY
-                    && !jumpedForHit
-                    && !player.onGround
-                    && player.motionY > 0.0D) {
-                player.motionY = 0.0D;
-            }
+        double keep = JumpResetMod.blatantKeep / 100.0D;
+        player.motionX *= keep;
+        player.motionZ *= keep;
+
+        if (JumpResetMod.blatantAntiY
+                && groundedAtHit
+                && player.onGround
+                && player.motionY > 0.0D) {
+            player.motionY = 0.0D;
         }
     }
 
-    /** Semi / Legit: reducao disfarcada com fator sorteado. */
     private void applyLegitVelocity(EntityPlayerSP player) {
         if (RANDOM.nextInt(100) < JumpResetMod.velocityMissChance) {
             return;
@@ -262,7 +279,6 @@ public class JumpResetHandler {
         jumpedForHit = true;
 
         if (JumpResetMod.mode == JumpResetMod.Mode.LEGIT) {
-            // segura a tecla por 1 tick: o pulo sai no onLivingUpdate deste tick
             KeyBinding.setKeyBindState(mc.gameSettings.keyBindJump.getKeyCode(), true);
             jumpHoldTicks = 1;
             return;
@@ -320,4 +336,4 @@ public class JumpResetHandler {
         pendingJump = -1;
         waitTicks = 0;
     }
-}
+    }
