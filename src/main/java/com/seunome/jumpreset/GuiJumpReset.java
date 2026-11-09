@@ -101,6 +101,9 @@ public class GuiJumpReset extends GuiScreen {
             add(201, "Mode", Kind.CHOICE, left, 1, top);
             add(202, "Min CPS", Kind.SLIDER, left, 2, top);
             add(203, "Max CPS", Kind.SLIDER, left, 3, top);
+            add(207, "Min Delay", Kind.SLIDER, left, 4, top);
+            add(208, "Max Delay", Kind.SLIDER, left, 5, top);
+            add(209, "Block Duration", Kind.SLIDER, left, 6, top);
 
             add(204, "Randomization", Kind.CHOICE, right, 0, top);
             add(205, "Jitter", Kind.CHECK, right, 1, top);
@@ -177,6 +180,10 @@ public class GuiJumpReset extends GuiScreen {
             case 203:
                 return (int) Math.round(CombatModules.maxCps * 10.0D);
 
+            case 207: return CombatModules.minDelayMs;
+            case 208: return CombatModules.maxDelayMs;
+            case 209: return CombatModules.blockDurationMs;
+
             default: return 0;
         }
     }
@@ -215,11 +222,30 @@ public class GuiJumpReset extends GuiScreen {
                     CombatModules.minCps = CombatModules.maxCps;
                 }
                 break;
+
+            case 207:
+                CombatModules.minDelayMs = value;
+                if (CombatModules.minDelayMs > CombatModules.maxDelayMs) {
+                    CombatModules.maxDelayMs = CombatModules.minDelayMs;
+                }
+                break;
+
+            case 208:
+                CombatModules.maxDelayMs = value;
+                if (CombatModules.maxDelayMs < CombatModules.minDelayMs) {
+                    CombatModules.minDelayMs = CombatModules.maxDelayMs;
+                }
+                break;
+
+            case 209:
+                CombatModules.blockDurationMs = value;
+                break;
         }
     }
 
     private int sliderMin(int id) {
         if (id == 202 || id == 203) return 10;
+        if (id == 209) return 1;
         return 0;
     }
 
@@ -229,6 +255,7 @@ public class GuiJumpReset extends GuiScreen {
         if (id == 101) return 60;
         if (id == 102 || id == 103) return 1000;
         if (id == 202 || id == 203) return 300;
+        if (id == 207 || id == 208 || id == 209) return 500;
         return 100;
     }
 
@@ -276,6 +303,10 @@ public class GuiJumpReset extends GuiScreen {
 
             case 203:
                 return String.format("%.1f", CombatModules.maxCps);
+
+            case 207: return CombatModules.minDelayMs + "ms";
+            case 208: return CombatModules.maxDelayMs + "ms";
+            case 209: return CombatModules.blockDurationMs + "ms";
 
             case 204:
                 return CombatModules.randomization.name();
