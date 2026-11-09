@@ -8,21 +8,43 @@ import java.io.File;
 
 public class CombatModules {
 
+    // Ativação dos módulos
     public static boolean wtapEnabled = false;
     public static boolean blockHitEnabled = false;
 
-    // WTap
+    // =========================
+    // WTAP
+    // =========================
+
     public static double activeDistance = 1.0D;
     public static int wtapDelay = 50;
     public static int postDelay = 200;
 
-    // BlockHit
+    // =========================
+    // BLOCKHIT
+    // =========================
+
     public enum BlockHitMode {
         AUTO,
         PREDICT
     }
 
+    public enum Randomization {
+        OFF,
+        LOW,
+        MEDIUM,
+        EXTRA;
+
+        public Randomization next() {
+            Randomization[] values = values();
+            return values[(ordinal() + 1) % values.length];
+        }
+    }
+
     public static BlockHitMode blockHitMode = BlockHitMode.AUTO;
+
+    public static Randomization randomization =
+            Randomization.EXTRA;
 
     public static double minCps = 20.1D;
     public static double maxCps = 20.1D;
@@ -32,7 +54,12 @@ public class CombatModules {
 
     private static Configuration config;
 
+    // =========================
+    // CARREGAR CONFIGURAÇÕES
+    // =========================
+
     public static void loadConfig() {
+
         File file = new File(
                 Minecraft.getMinecraft().mcDataDir,
                 "config/jumpreset-combat.cfg"
@@ -40,56 +67,117 @@ public class CombatModules {
 
         config = new Configuration(file);
 
+        // WTap
+
         wtapEnabled = config.getBoolean(
-                "wtapEnabled", "WTap", false, "Ativa o WTap"
+                "wtapEnabled",
+                "WTap",
+                false,
+                "Ativa o WTap"
         );
 
         activeDistance = config.getFloat(
-                "activeDistance", "WTap", 1.0F, 0.0F, 6.0F,
-                "Distancia adicional para ativar"
+                "activeDistance",
+                "WTap",
+                1.0F,
+                0.0F,
+                6.0F,
+                "Distancia de ativacao"
         );
 
         wtapDelay = config.getInt(
-                "wtapDelay", "WTap", 50, 0, 1000,
+                "wtapDelay",
+                "WTap",
+                50,
+                0,
+                1000,
                 "Atraso em milissegundos"
         );
 
         postDelay = config.getInt(
-                "postDelay", "WTap", 200, 0, 1000,
+                "postDelay",
+                "WTap",
+                200,
+                0,
+                1000,
                 "Duracao em milissegundos"
         );
 
+        // BlockHit
+
         blockHitEnabled = config.getBoolean(
-                "blockHitEnabled", "BlockHit", false, "Ativa o BlockHit"
+                "blockHitEnabled",
+                "BlockHit",
+                false,
+                "Ativa o BlockHit"
         );
 
         String mode = config.getString(
-                "mode", "BlockHit", "AUTO",
-                "Modo do BlockHit", new String[]{"AUTO", "PREDICT"}
+                "mode",
+                "BlockHit",
+                "AUTO",
+                "Modo do BlockHit",
+                new String[]{"AUTO", "PREDICT"}
         );
 
         try {
-            blockHitMode = BlockHitMode.valueOf(mode);
+            blockHitMode = BlockHitMode.valueOf(
+                    mode.toUpperCase()
+            );
         } catch (IllegalArgumentException e) {
             blockHitMode = BlockHitMode.AUTO;
         }
 
+        String random = config.getString(
+                "randomization",
+                "BlockHit",
+                "EXTRA",
+                "Nivel de randomizacao",
+                new String[]{"OFF", "LOW", "MEDIUM", "EXTRA"}
+        );
+
+        try {
+            randomization = Randomization.valueOf(
+                    random.toUpperCase()
+            );
+        } catch (IllegalArgumentException e) {
+            randomization = Randomization.EXTRA;
+        }
+
         minCps = config.getFloat(
-                "minCps", "BlockHit", 20.1F, 1.0F, 30.0F,
-                "Valor minimo de CPS (reservado)"
+                "minCps",
+                "BlockHit",
+                20.1F,
+                1.0F,
+                30.0F,
+                "CPS minimo"
         );
 
         maxCps = config.getFloat(
-                "maxCps", "BlockHit", 20.1F, 1.0F, 30.0F,
-                "Valor maximo de CPS (reservado)"
+                "maxCps",
+                "BlockHit",
+                20.1F,
+                1.0F,
+                30.0F,
+                "CPS maximo"
         );
 
+        if (minCps > maxCps) {
+            maxCps = minCps;
+        }
+
         jitter = config.getBoolean(
-                "jitter", "BlockHit", false, "Jitter"
+                "jitter",
+                "BlockHit",
+                false,
+                "Ativa o jitter"
         );
 
         limitItems = config.getBoolean(
-                "limitItems", "BlockHit", false, "Limitar itens"
+                "limitItems",
+                "BlockHit",
+                false,
+                "Limita os itens utilizados"
         );
 
         if (config.hasChanged()) {
@@ -97,22 +185,85 @@ public class CombatModules {
         }
     }
 
+    // =========================
+    // SALVAR CONFIGURAÇÕES
+    // =========================
+
     public static void saveConfig() {
+
         if (config == null) {
-            loadConfig();
+            return;
         }
 
-        config.get("WTap", "wtapEnabled", false).set(wtapEnabled);
-        config.get("WTap", "activeDistance", 1.0F).set((float) activeDistance);
-        config.get("WTap", "wtapDelay", 50).set(wtapDelay);
-        config.get("WTap", "postDelay", 200).set(postDelay);
+        // WTap
 
-        config.get("BlockHit", "blockHitEnabled", false).set(blockHitEnabled);
-        config.get("BlockHit", "mode", "AUTO").set(blockHitMode.name());
-        config.get("BlockHit", "minCps", 20.1F).set((float) minCps);
-        config.get("BlockHit", "maxCps", 20.1F).set((float) maxCps);
-        config.get("BlockHit", "jitter", false).set(jitter);
-        config.get("BlockHit", "limitItems", false).set(limitItems);
+        config.get(
+                "WTap",
+                "wtapEnabled",
+                false
+        ).set(wtapEnabled);
+
+        config.get(
+                "WTap",
+                "activeDistance",
+                1.0F
+        ).set((float) activeDistance);
+
+        config.get(
+                "WTap",
+                "wtapDelay",
+                50
+        ).set(wtapDelay);
+
+        config.get(
+                "WTap",
+                "postDelay",
+                200
+        ).set(postDelay);
+
+        // BlockHit
+
+        config.get(
+                "BlockHit",
+                "blockHitEnabled",
+                false
+        ).set(blockHitEnabled);
+
+        config.get(
+                "BlockHit",
+                "mode",
+                "AUTO"
+        ).set(blockHitMode.name());
+
+        config.get(
+                "BlockHit",
+                "randomization",
+                "EXTRA"
+        ).set(randomization.name());
+
+        config.get(
+                "BlockHit",
+                "minCps",
+                20.1F
+        ).set((float) minCps);
+
+        config.get(
+                "BlockHit",
+                "maxCps",
+                20.1F
+        ).set((float) maxCps);
+
+        config.get(
+                "BlockHit",
+                "jitter",
+                false
+        ).set(jitter);
+
+        config.get(
+                "BlockHit",
+                "limitItems",
+                false
+        ).set(limitItems);
 
         config.save();
     }
