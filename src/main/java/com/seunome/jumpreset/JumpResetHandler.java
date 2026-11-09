@@ -15,6 +15,9 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 import java.util.List;
 import java.util.Random;
 
+import org.lwjgl.input.Keyboard;
+import org.lwjgl.input.Mouse;
+
 @SideOnly(Side.CLIENT)
 public class JumpResetHandler {
 
@@ -29,6 +32,7 @@ public class JumpResetHandler {
     private int pendingJump = -1;
     private int waitTicks;
     private int jumpHoldTicks;
+    private int jumpKeyCode = Integer.MIN_VALUE;
     private int antikbTicks;
     private boolean jumpedForHit;
     private boolean groundedAtHit;
@@ -53,7 +57,7 @@ public class JumpResetHandler {
         if (jumpHoldTicks > 0) {
             jumpHoldTicks--;
             if (jumpHoldTicks == 0) {
-                KeyBinding.setKeyBindState(mc.gameSettings.keyBindJump.getKeyCode(), false);
+                releaseJumpKey(mc);
             }
         }
 
@@ -279,7 +283,8 @@ public class JumpResetHandler {
         jumpedForHit = true;
 
         if (JumpResetMod.mode == JumpResetMod.Mode.LEGIT) {
-            KeyBinding.setKeyBindState(mc.gameSettings.keyBindJump.getKeyCode(), true);
+            jumpKeyCode = mc.gameSettings.keyBindJump.getKeyCode();
+            KeyBinding.setKeyBindState(jumpKeyCode, true);
             jumpHoldTicks = 1;
             return;
         }
@@ -293,10 +298,21 @@ public class JumpResetHandler {
     }
 
     private void releaseJumpKey(Minecraft mc) {
-        if (jumpHoldTicks > 0) {
-            jumpHoldTicks = 0;
-            KeyBinding.setKeyBindState(mc.gameSettings.keyBindJump.getKeyCode(), false);
+        jumpHoldTicks = 0;
+
+        if (jumpKeyCode == Integer.MIN_VALUE) {
+            return;
         }
+
+        KeyBinding.setKeyBindState(jumpKeyCode, isPhysicalKeyDown(jumpKeyCode));
+        jumpKeyCode = Integer.MIN_VALUE;
+    }
+
+    private boolean isPhysicalKeyDown(int keyCode) {
+        if (keyCode >= 0) {
+            return Keyboard.isKeyDown(keyCode);
+        }
+        return Mouse.isButtonDown(keyCode + 100);
     }
 
     private boolean isPlayerNear(Minecraft mc, EntityPlayerSP player, double range) {
