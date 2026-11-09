@@ -1,4 +1,3 @@
-
 package com.seunome.jumpreset;
 
 import net.minecraft.client.Minecraft;
@@ -29,7 +28,9 @@ public class CombatModulesHandler {
     private boolean wtapIsReleasing = false;
 
     // BlockHit
+    private long pendingBlockAt = -1L;
     private long blockUntil = -1L;
+    private long nextPulseAllowedAt = -1L;
     private int predictCooldown = 0;
     private boolean blocking = false;
 
@@ -40,23 +41,18 @@ public class CombatModulesHandler {
 
         EntityPlayerSP player = mc.thePlayer;
 
-        // WTap
         if (CombatModules.wtapEnabled) {
             double distance = player.getDistanceToEntity(event.target);
-
             if (distance <= 3.0D + CombatModules.activeDistance) {
-                wtapReleaseAt =
-                    System.currentTimeMillis() + CombatModules.wtapDelay;
-
+                wtapReleaseAt = System.currentTimeMillis()
+                        + Math.max(0, CombatModules.wtapDelay);
                 wtapRestoreAt = -1L;
             }
         }
 
-        // BlockHit AUTO
         if (CombatModules.blockHitEnabled
-                && CombatModules.blockHitMode
-                == CombatModules.BlockHitMode.AUTO) {
-            startBlocking(player);
+                && CombatModules.blockHitMode == CombatModules.BlockHitMode.AUTO) {
+            scheduleBlockPulse(player);
         }
     }
 
@@ -65,7 +61,6 @@ public class CombatModulesHandler {
         if (event.phase != TickEvent.Phase.END) return;
 
         EntityPlayerSP player = mc.thePlayer;
-
         if (player == null || mc.theWorld == null) {
             releaseEverything();
             return;
@@ -92,11 +87,9 @@ public class CombatModulesHandler {
 
             if (isPhysicalKeyDown(key)
                     && player.movementInput.moveForward > 0.0F) {
-
                 KeyBinding.setKeyBindState(key, false);
-
                 wtapIsReleasing = true;
-                wtapRestoreAt = now + CombatModules.postDelay;
+                wtapRestoreAt = now + Math.max(0, CombatModules.postDelay);
             }
 
             wtapReleaseAt = -1L;
@@ -108,14 +101,10 @@ public class CombatModulesHandler {
     }
 
     private void restoreWTap() {
-        if (!wtapIsReleasing) return;
+        if (!wtapIsReleasing || mc.gameSettings == null) return;
 
         int key = mc.gameSettings.keyBindForward.getKeyCode();
-
-        KeyBinding.setKeyBindState(
-            key,
-            isPhysicalKeyDown(key)
-        );
+        KeyBinding.setKeyBindState(key, isPhysicalKeyDown(key));
 
         wtapIsReleasing = false;
         wtapRestoreAt = -1L;
@@ -125,11 +114,17 @@ public class CombatModulesHandler {
 
     private void updateBlockHit(EntityPlayerSP player) {
         if (!CombatModules.blockHitEnabled || !canBlock(player)) {
+            pendingBlockAt = -1L;
             stopBlocking();
             return;
         }
 
         long now = System.currentTimeMillis();
+
+        if (pendingBlockAt >= 0L && now >= pendingBlockAt) {
+            pendingBlockAt = -1L;
+            startBlocking();
+        }
 
         if (blocking && now >= blockUntil) {
             stopBlocking();
@@ -139,119 +134,128 @@ public class CombatModulesHandler {
             predictCooldown--;
         }
 
-        if (CombatModules.blockHitMode
-                == CombatModules.BlockHitMode.PREDICT
+        if (CombatModules.blockHitMode == CombatModules.BlockHitMode.PREDICT
                 && predictCooldown == 0
+                && !blocking
+                && pendingBlockAt < 0L
                 && shouldPredict(player)) {
-
-            startBlocking(player);
+            scheduleBlockPulse(player);
             predictCooldown = 2;
         }
     }
 
+    private void scheduleBlockPulse(EntityPlayerSP player) {
+        if (!canBlock(player) || blocking || pendingBlockAt >= 0L) return;
+
+        long now = System.currentTimeMillis();
+        if (now < nextPulseAllowedAt) return;
+
+        double minCps = Math.max(1.0D, Math.min(30.0D, CombatModules.minCps));
+        double maxCps = Math.max(minCps, Math.min(30.0D, CombatModules.maxCps));
+        double cps = minCps + random.nextDouble() * (maxCps - minCps);
+
+        long interval = Math.max(1L, Math.round(1000.0D / cps));
+        nextPulseAllowedAt = now + interval;
+
+        int minDelay = clamp(CombatModules.minDelayMs, 0, 500);
+        int maxDelay = clamp(CombatModules.maxDelayMs, minDelay, 500);
+        long delay = minDelay;
+        if (maxDelay > minDelay) {
+            delay += random.nextInt(maxDelay - minDelay + 1);
+        }
+
+        delay += getRandomOffset();
+        pendingBlockAt = now + Math.max(0L, delay);
+    }
+
     private boolean shouldPredict(EntityPlayerSP player) {
         List<Entity> entities =
-            mc.theWorld.getEntitiesWithinAABBExcludingEntity(
-                player,
-                player.getEntityBoundingBox().expand(4.0D, 3.0D, 4.0D)
-            );
+                mc.theWorld.getEntitiesWithinAABBExcludingEntity(
+                        player,
+                        player.getEntityBoundingBox().expand(4.0D, 3.0D, 4.0D)
+                );
 
         for (Entity entity : entities) {
-            if (!(entity instanceof EntityPlayer)) continue;
-            if (entity == player) continue;
+            if (!(entity instanceof EntityPlayer) || entity == player) continue;
 
             EntityPlayer enemy = (EntityPlayer) entity;
-
             if (enemy.isDead || !enemy.isSwingInProgress) continue;
             if (player.getDistanceToEntity(enemy) > 4.0D) continue;
 
             Vec3 direction = new Vec3(
-                player.posX - enemy.posX,
-                player.posY + player.getEyeHeight()
-                    - enemy.posY - enemy.getEyeHeight(),
-                player.posZ - enemy.posZ
+                    player.posX - enemy.posX,
+                    player.posY + player.getEyeHeight()
+                            - enemy.posY - enemy.getEyeHeight(),
+                    player.posZ - enemy.posZ
             ).normalize();
 
-            Vec3 enemyLook = enemy.getLookVec();
-
-            if (enemyLook.dotProduct(direction) > 0.55D) {
+            if (enemy.getLookVec().dotProduct(direction) > 0.55D) {
                 return true;
             }
         }
-
         return false;
     }
 
     private boolean canBlock(EntityPlayerSP player) {
-        return player.getHeldItem() != null
-            && player.getHeldItem().getItem() instanceof ItemSword;
+        return player != null
+                && player.getHeldItem() != null
+                && player.getHeldItem().getItem() instanceof ItemSword;
     }
 
-    private void startBlocking(EntityPlayerSP player) {
-        if (!canBlock(player)) return;
+    private void startBlocking() {
+        if (mc.thePlayer == null || !canBlock(mc.thePlayer)) return;
 
         int key = mc.gameSettings.keyBindUseItem.getKeyCode();
-
         if (!blocking) {
             KeyBinding.setKeyBindState(key, true);
             blocking = true;
         }
 
-        blockUntil = System.currentTimeMillis() + getBlockDuration();
+        int duration = clamp(CombatModules.blockDurationMs, 1, 500);
+        duration += getRandomOffset();
+        if (CombatModules.jitter) {
+            duration += random.nextInt(5) - 2;
+        }
+
+        blockUntil = System.currentTimeMillis() + Math.max(1L, duration);
     }
 
     private void stopBlocking() {
-        if (!blocking) return;
+        if (!blocking || mc.gameSettings == null) return;
 
         int key = mc.gameSettings.keyBindUseItem.getKeyCode();
-
-        KeyBinding.setKeyBindState(
-            key,
-            isPhysicalKeyDown(key)
-        );
+        KeyBinding.setKeyBindState(key, isPhysicalKeyDown(key));
 
         blocking = false;
         blockUntil = -1L;
     }
 
-    private long getBlockDuration() {
-        double min = Math.max(1.0D, CombatModules.minCps);
-        double max = Math.max(min, CombatModules.maxCps);
-
-        double cps = min + (random.nextDouble() * (max - min));
-        long duration = (long) (1000.0D / cps);
-
+    private int getRandomOffset() {
+        int offset = 0;
         switch (CombatModules.randomization) {
             case LOW:
-                duration += random.nextInt(3) - 1;
+                offset = random.nextInt(3) - 1;
                 break;
-
             case MEDIUM:
-                duration += random.nextInt(7) - 3;
+                offset = random.nextInt(7) - 3;
                 break;
-
             case EXTRA:
-                duration += random.nextInt(13) - 6;
+                offset = random.nextInt(13) - 6;
                 break;
-
             default:
                 break;
         }
+        return offset;
+    }
 
-        if (CombatModules.jitter) {
-            duration += random.nextInt(5) - 2;
-        }
-
-        return Math.max(1L, duration);
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     // ---------------- Key handling ----------------
 
     private boolean isPhysicalKeyDown(int key) {
-        if (key >= 0) {
-            return Keyboard.isKeyDown(key);
-        }
-
+        if (key >= 0) return Keyboard.isKeyDown(key);
         return Mouse.isButtonDown(key + 100);
     }
 
@@ -261,6 +265,9 @@ public class CombatModulesHandler {
 
         wtapReleaseAt = -1L;
         wtapRestoreAt = -1L;
+        pendingBlockAt = -1L;
+        blockUntil = -1L;
+        nextPulseAllowedAt = -1L;
         predictCooldown = 0;
     }
 }
