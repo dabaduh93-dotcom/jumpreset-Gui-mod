@@ -33,6 +33,7 @@ public class CombatModulesHandler {
     private long nextPulseAllowedAt = -1L;
     private int predictCooldown = 0;
     private boolean blocking = false;
+    private int blockingKeyCode = Integer.MIN_VALUE;
 
     @SubscribeEvent
     public void onAttack(AttackEntityEvent event) {
@@ -207,7 +208,8 @@ public class CombatModulesHandler {
 
         int key = mc.gameSettings.keyBindUseItem.getKeyCode();
         if (!blocking) {
-            KeyBinding.setKeyBindState(key, true);
+            blockingKeyCode = key;
+            KeyBinding.setKeyBindState(blockingKeyCode, true);
             blocking = true;
         }
 
@@ -221,12 +223,19 @@ public class CombatModulesHandler {
     }
 
     private void stopBlocking() {
-        if (!blocking || mc.gameSettings == null) return;
+        if (!blocking) return;
 
-        int key = mc.gameSettings.keyBindUseItem.getKeyCode();
-        KeyBinding.setKeyBindState(key, isPhysicalKeyDown(key));
+        // Restore the exact key that was pressed, even if the user changed
+        // the key binding while the temporary block was active.
+        if (mc.gameSettings != null && blockingKeyCode != Integer.MIN_VALUE) {
+            KeyBinding.setKeyBindState(
+                    blockingKeyCode,
+                    isPhysicalKeyDown(blockingKeyCode)
+            );
+        }
 
         blocking = false;
+        blockingKeyCode = Integer.MIN_VALUE;
         blockUntil = -1L;
     }
 
