@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.EnumChatFormatting;
+
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
@@ -14,6 +15,7 @@ import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
+
 import org.lwjgl.input.Keyboard;
 
 @SideOnly(Side.CLIENT)
@@ -46,8 +48,8 @@ public class JumpResetMod {
         }
 
         public Mode next() {
-            Mode[] v = values();
-            return v[(ordinal() + 1) % v.length];
+            Mode[] values = values();
+            return values[(ordinal() + 1) % values.length];
         }
     }
 
@@ -90,6 +92,7 @@ public class JumpResetMod {
 
         String modeName = config.get(cat, "mode", Mode.BLATANT.name(),
                 "BLATANT / SEMI_BLATANT / LEGIT").getString();
+
         try {
             mode = Mode.valueOf(modeName.toUpperCase());
         } catch (IllegalArgumentException e) {
@@ -98,32 +101,43 @@ public class JumpResetMod {
 
         velocityEnabled = config.get(cat, "velocityEnabled", true,
                 "Aplica a reducao de knockback").getBoolean();
+
         blatantKeep = config.getInt("blatantKeep", cat, 60, 0, 100,
-                "Blatant: % do KB horizontal que permanece (0 = antikb total)");
+                "Blatant: percentual de KB horizontal que permanece");
+
         blatantAntiY = config.get(cat, "blatantAntiY", false,
-                "Blatant: cancela o impulso vertical do hit (flag no Grim)").getBoolean();
+                "Cancela impulso vertical do hit").getBoolean();
+
         antikbHold = config.getInt("antikbHold", cat, 2, 0, 10,
                 "Ticks de antikb apos o hit");
 
         velocityRandomize = config.get(cat, "velocityRandomize", true,
-                "Sorteia o fator de reducao por hit").getBoolean();
+                "Sorteia fator de reducao por hit").getBoolean();
+
         velocityMissChance = config.getInt("velocityMissChance", cat, 15, 0, 50,
-                "% de hits sem reducao (disfarce)");
+                "Percentual de hits sem reducao").getInt();
 
         chance = config.getInt("chance", cat, 100, 0, 100,
                 "Chance de tentar o perfect jump");
+
         accuracy = config.getInt("accuracy", cat, 100, 0, 100,
                 "Chance do timing sair perfeito");
+
         instantJump = config.get(cat, "instantJump", true,
-                "Pula no mesmo tick do hit (sem atraso)").getBoolean();
+                "Pula no mesmo tick do hit").getBoolean();
+
         onlyWhenTargeting = config.get(cat, "onlyWhenTargeting", false,
                 "So ativa quando o oponente esta no crosshair").getBoolean();
+
         nearbyPlayerCheck = config.get(cat, "nearbyPlayerCheck", true,
-                "So conta como hit se houver jogador por perto").getBoolean();
+                "Verifica jogador por perto").getBoolean();
+
         waterCheck = config.get(cat, "waterCheck", true,
-                "Nao ativa na agua/lava").getBoolean();
+                "Nao ativa na agua ou lava").getBoolean();
+
         delay = config.getInt("delay", cat, 0, 0, 5,
-                "Ticks de espera (ignorado com Instant Jump)");
+                "Ticks de espera").getInt();
+
         knockbackThreshold = config.get(cat, "knockbackThreshold", 0.12D,
                 "Velocidade horizontal minima para considerar hit real").getDouble();
 
@@ -133,7 +147,12 @@ public class JumpResetMod {
     }
 
     public static void saveConfig() {
+        if (config == null) {
+            return;
+        }
+
         String cat = Configuration.CATEGORY_GENERAL;
+
         config.get(cat, "enabled", true).set(enabled);
         config.get(cat, "mode", Mode.BLATANT.name()).set(mode.name());
         config.get(cat, "velocityEnabled", true).set(velocityEnabled);
@@ -150,22 +169,38 @@ public class JumpResetMod {
         config.get(cat, "waterCheck", true).set(waterCheck);
         config.get(cat, "delay", 0).set(delay);
         config.get(cat, "knockbackThreshold", 0.12D).set(knockbackThreshold);
+
         config.save();
     }
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
-        toggleKey = new KeyBinding("key.jumpreset.toggle", Keyboard.KEY_R, "key.categories.jumpreset");
-        guiKey = new KeyBinding("key.jumpreset.gui", Keyboard.KEY_Z, "key.categories.jumpreset");
+        toggleKey = new KeyBinding(
+                "key.jumpreset.toggle",
+                Keyboard.KEY_R,
+                "key.categories.jumpreset"
+        );
+
+        guiKey = new KeyBinding(
+                "key.jumpreset.gui",
+                Keyboard.KEY_Z,
+                "key.categories.jumpreset"
+        );
+
         ClientRegistry.registerKeyBinding(toggleKey);
         ClientRegistry.registerKeyBinding(guiKey);
 
         JumpResetHandler handler = new JumpResetHandler();
+
         MinecraftForge.EVENT_BUS.register(handler);
         FMLCommonHandler.instance().bus().register(handler);
 
-        // Registro dos novos módulos
+        // Carrega as configuracoes dos novos modulos
+        CombatModules.loadConfig();
+
+        // Registra o handler de WTap e BlockHit
         CombatModulesHandler combatHandler = new CombatModulesHandler();
+
         MinecraftForge.EVENT_BUS.register(combatHandler);
         FMLCommonHandler.instance().bus().register(combatHandler);
     }
@@ -179,12 +214,18 @@ public class JumpResetMod {
         saveConfig();
 
         Minecraft mc = Minecraft.getMinecraft();
+
         if (mc.thePlayer != null) {
             String state = value
                     ? EnumChatFormatting.GREEN + "ON"
                     : EnumChatFormatting.RED + "OFF";
-            mc.thePlayer.addChatMessage(new ChatComponentText(
-                    EnumChatFormatting.AQUA + "[" + NAME + "] " + EnumChatFormatting.RESET + state));
+
+            mc.thePlayer.addChatMessage(
+                    new ChatComponentText(
+                            EnumChatFormatting.AQUA + "[" + NAME + "] "
+                                    + EnumChatFormatting.RESET + state
+                    )
+            );
         }
     }
-                }
+}
