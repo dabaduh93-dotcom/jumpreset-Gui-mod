@@ -1,3 +1,4 @@
+
 package com.seunome.jumpreset;
 
 import net.minecraft.client.Minecraft;
@@ -50,14 +51,12 @@ public class JumpResetMod {
         }
     }
 
-    // ---- estado ----
     public static boolean enabled = true;
     public static Mode mode = Mode.BLATANT;
     public static boolean velocityEnabled = true;
 
-    // Blatant: % do KB horizontal que permanece. 0 = antikb total, 60 = preset bypass Grim
     public static int blatantKeep = 60;
-    public static boolean blatantAntiY = false;    // ON só fora de servidor com Grim
+    public static boolean blatantAntiY = false;
     public static int antikbHold = 2;
 
     public static boolean velocityRandomize = true;
@@ -164,6 +163,11 @@ public class JumpResetMod {
         JumpResetHandler handler = new JumpResetHandler();
         MinecraftForge.EVENT_BUS.register(handler);
         FMLCommonHandler.instance().bus().register(handler);
+
+        // Registro dos novos módulos
+        CombatModulesHandler combatHandler = new CombatModulesHandler();
+        MinecraftForge.EVENT_BUS.register(combatHandler);
+        FMLCommonHandler.instance().bus().register(combatHandler);
     }
 
     public static void toggle() {
@@ -183,4 +187,4 @@ public class JumpResetMod {
                     EnumChatFormatting.AQUA + "[" + NAME + "] " + EnumChatFormatting.RESET + state));
         }
     }
-}
+                }
