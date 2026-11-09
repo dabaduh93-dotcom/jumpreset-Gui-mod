@@ -48,6 +48,9 @@ public class CombatModules {
 
     public static double minCps = 20.1D;
     public static double maxCps = 20.1D;
+    public static int minDelayMs = 0;
+    public static int maxDelayMs = 50;
+    public static int blockDurationMs = 35;
 
     public static boolean jitter = false;
     public static boolean limitItems = false;
@@ -166,6 +169,25 @@ public class CombatModules {
             maxCps = minCps;
         }
 
+        minDelayMs = config.getInt(
+                "minDelayMs", "BlockHit", 0, 0, 500,
+                "Atraso minimo antes de bloquear (ms)"
+        );
+
+        maxDelayMs = config.getInt(
+                "maxDelayMs", "BlockHit", 50, 0, 500,
+                "Atraso maximo antes de bloquear (ms)"
+        );
+
+        if (minDelayMs > maxDelayMs) {
+            maxDelayMs = minDelayMs;
+        }
+
+        blockDurationMs = config.getInt(
+                "blockDurationMs", "BlockHit", 35, 1, 500,
+                "Duracao do bloqueio (ms)"
+        );
+
         jitter = config.getBoolean(
                 "jitter",
                 "BlockHit",
@@ -252,6 +274,24 @@ public class CombatModules {
                 "maxCps",
                 20.1F
         ).set((float) maxCps);
+
+        config.get(
+                "BlockHit",
+                "minDelayMs",
+                0
+        ).set(minDelayMs);
+
+        config.get(
+                "BlockHit",
+                "maxDelayMs",
+                50
+        ).set(maxDelayMs);
+
+        config.get(
+                "BlockHit",
+                "blockDurationMs",
+                35
+        ).set(blockDurationMs);
 
         config.get(
                 "BlockHit",
