@@ -115,7 +115,7 @@ public class JumpResetMod {
                 "Sorteia fator de reducao por hit").getBoolean();
 
         velocityMissChance = config.getInt("velocityMissChance", cat, 15, 0, 50,
-                "Percentual de hits sem reducao").getInt();
+                "Percentual de hits sem reducao");
 
         chance = config.getInt("chance", cat, 100, 0, 100,
                 "Chance de tentar o perfect jump");
@@ -136,7 +136,7 @@ public class JumpResetMod {
                 "Nao ativa na agua ou lava").getBoolean();
 
         delay = config.getInt("delay", cat, 0, 0, 5,
-                "Ticks de espera").getInt();
+                "Ticks de espera");
 
         knockbackThreshold = config.get(cat, "knockbackThreshold", 0.12D,
                 "Velocidade horizontal minima para considerar hit real").getDouble();
