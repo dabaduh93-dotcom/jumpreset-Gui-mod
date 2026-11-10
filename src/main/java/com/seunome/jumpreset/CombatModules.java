@@ -50,7 +50,7 @@ public class CombatModules {
     public static double maxCps = 20.1D;
     public static int minDelayMs = 0;
     public static int maxDelayMs = 50;
-    public static int blockDurationMs = 35;
+    public static int blockDurationMs = 50;
 
     public static boolean jitter = false;
     public static boolean limitItems = false;
@@ -290,7 +290,7 @@ public class CombatModules {
         config.get(
                 "BlockHit",
                 "blockDurationMs",
-                35
+                50
         ).set(blockDurationMs);
 
         config.get(
