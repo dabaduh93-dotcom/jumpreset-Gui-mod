@@ -16,6 +16,10 @@ import org.lwjgl.input.Mouse;
 
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 public class CombatModulesHandler {
 
@@ -28,10 +32,10 @@ public class CombatModulesHandler {
     private boolean wtapIsReleasing = false;
 
     // BlockHit
-    private long pendingBlockAt = -1L;
+    private final Deque<Long> pendingBlockTimes = new ArrayDeque<Long>();
+    private final Set<Integer> activePredictedSwings = new HashSet<Integer>();
     private long blockUntil = -1L;
     private long nextPulseAllowedAt = -1L;
-    private int predictCooldown = 0;
     private boolean blocking = false;
     private int blockingKeyCode = Integer.MIN_VALUE;
 
@@ -122,41 +126,36 @@ public class CombatModulesHandler {
 
         long now = System.currentTimeMillis();
 
-        if (pendingBlockAt >= 0L && now >= pendingBlockAt) {
-            pendingBlockAt = -1L;
-            startBlocking();
-        }
-
         if (blocking && now >= blockUntil) {
             stopBlocking();
         }
 
-        if (predictCooldown > 0) {
-            predictCooldown--;
+        // Cada evento de ataque/swing gera um unico pulso. Se outro pulso
+        // estiver em andamento, o proximo fica na fila em vez de ser perdido.
+        if (!blocking && !pendingBlockTimes.isEmpty()
+                && now >= pendingBlockTimes.peekFirst()) {
+            pendingBlockTimes.removeFirst();
+            startBlocking();
         }
 
         if (CombatModules.blockHitMode == CombatModules.BlockHitMode.PREDICT
-                && predictCooldown == 0
-                && !blocking
-                && pendingBlockAt < 0L
-                && shouldPredict(player)) {
+                && detectNewIncomingSwing(player)) {
             scheduleBlockPulse(player);
-            predictCooldown = 2;
         }
     }
 
     private void scheduleBlockPulse(EntityPlayerSP player) {
-        if (!canBlock(player) || blocking || pendingBlockAt >= 0L) return;
+        if (!canBlock(player)) return;
 
         long now = System.currentTimeMillis();
-        if (now < nextPulseAllowedAt) return;
 
         double minCps = Math.max(1.0D, Math.min(30.0D, CombatModules.minCps));
         double maxCps = Math.max(minCps, Math.min(30.0D, CombatModules.maxCps));
         double cps = minCps + random.nextDouble() * (maxCps - minCps);
 
         long interval = Math.max(1L, Math.round(1000.0D / cps));
-        nextPulseAllowedAt = now + interval;
+        long scheduledAt = Math.max(now, nextPulseAllowedAt);
+        nextPulseAllowedAt = scheduledAt + interval;
 
         int minDelay = clamp(CombatModules.minDelayMs, 0, 500);
         int maxDelay = clamp(CombatModules.maxDelayMs, minDelay, 500);
@@ -166,21 +165,33 @@ public class CombatModulesHandler {
         }
 
         delay += getRandomOffset();
-        pendingBlockAt = now + Math.max(0L, delay);
+        pendingBlockTimes.addLast(scheduledAt + Math.max(0L, delay));
     }
 
-    private boolean shouldPredict(EntityPlayerSP player) {
+    // Detecta o inicio de cada animacao de ataque inimiga apenas uma vez.
+    // A previsao usa distancia e direcao do olhar; nao consegue confirmar
+    // que o servidor realmente aceitara o golpe.
+    private boolean detectNewIncomingSwing(EntityPlayerSP player) {
         List<Entity> entities =
                 mc.theWorld.getEntitiesWithinAABBExcludingEntity(
                         player,
                         player.getEntityBoundingBox().expand(4.0D, 3.0D, 4.0D)
                 );
 
+        Set<Integer> swingingNow = new HashSet<Integer>();
+        boolean detected = false;
+
         for (Entity entity : entities) {
             if (!(entity instanceof EntityPlayer) || entity == player) continue;
 
             EntityPlayer enemy = (EntityPlayer) entity;
             if (enemy.isDead || !enemy.isSwingInProgress) continue;
+
+            int entityId = enemy.getEntityId();
+            swingingNow.add(entityId);
+            if (activePredictedSwings.contains(entityId)) continue;
+            activePredictedSwings.add(entityId);
+
             if (player.getDistanceToEntity(enemy) > 4.0D) continue;
 
             Vec3 direction = new Vec3(
@@ -191,16 +202,21 @@ public class CombatModulesHandler {
             ).normalize();
 
             if (enemy.getLookVec().dotProduct(direction) > 0.55D) {
-                return true;
+                detected = true;
             }
         }
-        return false;
+
+        activePredictedSwings.retainAll(swingingNow);
+        return detected;
     }
 
     private boolean canBlock(EntityPlayerSP player) {
-        return player != null
-                && player.getHeldItem() != null
-                && player.getHeldItem().getItem() instanceof ItemSword;
+        if (player == null || player.getHeldItem() == null) return false;
+
+        // Com Limit Items ligado, so permite espada. Desligado, deixa o
+        // clique direito passar para o item equipado (comportamento vanilla).
+        return !CombatModules.limitItems
+                || player.getHeldItem().getItem() instanceof ItemSword;
     }
 
     private void startBlocking() {
@@ -274,9 +290,9 @@ public class CombatModulesHandler {
 
         wtapReleaseAt = -1L;
         wtapRestoreAt = -1L;
-        pendingBlockAt = -1L;
+        pendingBlockTimes.clear();
+        activePredictedSwings.clear();
         blockUntil = -1L;
         nextPulseAllowedAt = -1L;
-        predictCooldown = 0;
     }
 }
