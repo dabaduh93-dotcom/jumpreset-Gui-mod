@@ -236,7 +236,8 @@ public class CombatModulesHandler {
             duration += random.nextInt(5) - 2;
         }
 
-        blockUntil = System.currentTimeMillis() + Math.max(1L, duration);
+        // Um pulso precisa durar pelo menos um tick do cliente para ser enviado.
+        blockUntil = System.currentTimeMillis() + Math.max(50L, duration);
     }
 
     private void stopBlocking() {
