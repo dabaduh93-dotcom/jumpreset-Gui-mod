@@ -245,7 +245,7 @@ public class GuiJumpReset extends GuiScreen {
 
     private int sliderMin(int id) {
         if (id == 202 || id == 203) return 10;
-        if (id == 209) return 1;
+        if (id == 209) return 50;
         return 0;
     }
 
