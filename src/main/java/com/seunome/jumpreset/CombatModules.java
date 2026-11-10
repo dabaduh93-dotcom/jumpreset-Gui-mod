@@ -184,7 +184,7 @@ public class CombatModules {
         }
 
         blockDurationMs = config.getInt(
-                "blockDurationMs", "BlockHit", 35, 1, 500,
+                "blockDurationMs", "BlockHit", 50, 50, 500,
                 "Duracao do bloqueio (ms)"
         );
 
