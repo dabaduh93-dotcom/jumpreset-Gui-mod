@@ -119,7 +119,8 @@ public class CombatModulesHandler {
 
     private void updateBlockHit(EntityPlayerSP player) {
         if (!CombatModules.blockHitEnabled || !canBlock(player)) {
-            pendingBlockAt = -1L;
+            pendingBlockTimes.clear();
+            activePredictedSwings.clear();
             stopBlocking();
             return;
         }
