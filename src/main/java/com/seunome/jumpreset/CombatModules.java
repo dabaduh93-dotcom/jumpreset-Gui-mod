@@ -11,6 +11,7 @@ public class CombatModules {
     // Ativação dos módulos
     public static boolean wtapEnabled = false;
     public static boolean blockHitEnabled = false;
+    public static boolean hitSelectEnabled = false;
 
     // =========================
     // WTAP
@@ -23,6 +24,14 @@ public class CombatModules {
     // =========================
     // BLOCKHIT
     // =========================
+
+    public enum HitSelectMode {
+        MANUAL,
+        BLATANT
+    }
+
+    public static HitSelectMode hitSelectMode = HitSelectMode.MANUAL;
+    public static int hitSelectDelayMs = 150;
 
     public enum BlockHitMode {
         AUTO,
@@ -202,6 +211,26 @@ public class CombatModules {
                 "Limita os itens utilizados"
         );
 
+        hitSelectEnabled = config.getBoolean(
+                "hitSelectEnabled", "HitSelect", false,
+                "Ativa o Hit Select"
+        );
+
+        String hitMode = config.getString(
+                "mode", "HitSelect", "MANUAL",
+                "Modo do Hit Select", new String[]{"MANUAL", "BLATANT"}
+        );
+        try {
+            hitSelectMode = HitSelectMode.valueOf(hitMode.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            hitSelectMode = HitSelectMode.MANUAL;
+        }
+
+        hitSelectDelayMs = config.getInt(
+                "delayMs", "HitSelect", 150, 50, 500,
+                "Delay antes de atacar (ms)"
+        );
+
         if (config.hasChanged()) {
             config.save();
         }
@@ -304,6 +333,10 @@ public class CombatModules {
                 "limitItems",
                 false
         ).set(limitItems);
+
+        config.get("HitSelect", "hitSelectEnabled", false).set(hitSelectEnabled);
+        config.get("HitSelect", "mode", "MANUAL").set(hitSelectMode.name());
+        config.get("HitSelect", "delayMs", 150).set(hitSelectDelayMs);
 
         config.save();
     }
