@@ -31,6 +31,12 @@ public class CombatModulesHandler {
     private long wtapRestoreAt = -1L;
     private boolean wtapIsReleasing = false;
 
+    // Hit Select
+    private EntityPlayer hitSelectTarget;
+    private long hitSelectStartedAt = -1L;
+    private long hitSelectDeadline = -1L;
+    private boolean replayingHitSelect = false;
+
     // BlockHit
     private final Deque<Long> pendingBlockTimes = new ArrayDeque<Long>();
     private final Set<Integer> activePredictedSwings = new HashSet<Integer>();
@@ -45,6 +51,18 @@ public class CombatModulesHandler {
         if (event.entityPlayer != mc.thePlayer) return;
 
         EntityPlayerSP player = mc.thePlayer;
+
+        if (CombatModules.hitSelectEnabled && !replayingHitSelect
+                && event.target instanceof EntityPlayer) {
+            event.setCanceled(true);
+            if (hitSelectTarget == null) {
+                hitSelectTarget = (EntityPlayer) event.target;
+                hitSelectStartedAt = System.currentTimeMillis();
+                hitSelectDeadline = hitSelectStartedAt
+                        + clamp(CombatModules.hitSelectDelayMs, 50, 500);
+            }
+            return;
+        }
 
         if (CombatModules.wtapEnabled) {
             double distance = player.getDistanceToEntity(event.target);
@@ -76,7 +94,48 @@ public class CombatModulesHandler {
         }
 
         updateWTap(player);
+        updateHitSelect(player);
         updateBlockHit(player);
+    }
+
+    // ---------------- Hit Select ----------------
+
+    private void updateHitSelect(EntityPlayerSP player) {
+        if (!CombatModules.hitSelectEnabled) {
+            clearHitSelect();
+            return;
+        }
+        if (hitSelectTarget == null) return;
+
+        long now = System.currentTimeMillis();
+        if (hitSelectTarget.isDead || hitSelectTarget.worldObj != mc.theWorld
+                || player.getDistanceToEntity(hitSelectTarget) > 4.5D) {
+            clearHitSelect();
+            return;
+        }
+
+        boolean delayReached = now >= hitSelectDeadline;
+        boolean targetReady = hitSelectTarget.hurtResistantTime <= 1
+                && now - hitSelectStartedAt >= 50L;
+
+        if (CombatModules.hitSelectMode == CombatModules.HitSelectMode.MANUAL
+                ? delayReached : (targetReady || delayReached)) {
+            EntityPlayer target = hitSelectTarget;
+            clearHitSelect();
+            replayingHitSelect = true;
+            try {
+                mc.playerController.attackEntity(player, target);
+                player.swingItem();
+            } finally {
+                replayingHitSelect = false;
+            }
+        }
+    }
+
+    private void clearHitSelect() {
+        hitSelectTarget = null;
+        hitSelectStartedAt = -1L;
+        hitSelectDeadline = -1L;
     }
 
     // ---------------- WTap ----------------
@@ -293,6 +352,7 @@ public class CombatModulesHandler {
     private void releaseEverything() {
         restoreWTap();
         stopBlocking();
+        clearHitSelect();
 
         wtapReleaseAt = -1L;
         wtapRestoreAt = -1L;
