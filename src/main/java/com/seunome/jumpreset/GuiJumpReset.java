@@ -95,7 +95,7 @@ public class GuiJumpReset extends GuiScreen {
             add(102, "Delay", Kind.SLIDER, right, 0, top);
             add(103, "Post Delay", Kind.SLIDER, right, 1, top);
 
-        } else {
+        } else if (page == 2) {
             // BLOCKHIT
             add(200, "BlockHit", Kind.CHECK, left, 0, top);
             add(201, "Mode", Kind.CHOICE, left, 1, top);
@@ -108,6 +108,12 @@ public class GuiJumpReset extends GuiScreen {
             add(204, "Randomization", Kind.CHOICE, right, 0, top);
             add(205, "Jitter", Kind.CHECK, right, 1, top);
             add(206, "Limit Items", Kind.CHECK, right, 2, top);
+
+        } else {
+            // HIT SELECT
+            add(300, "Hit Select", Kind.CHECK, left, 0, top);
+            add(301, "Mode", Kind.CHOICE, left, 1, top);
+            add(302, "Delay", Kind.SLIDER, right, 0, top);
         }
     }
 
@@ -135,6 +141,7 @@ public class GuiJumpReset extends GuiScreen {
             case 200: return CombatModules.blockHitEnabled;
             case 205: return CombatModules.jitter;
             case 206: return CombatModules.limitItems;
+            case 300: return CombatModules.hitSelectEnabled;
 
             default: return false;
         }
@@ -154,6 +161,7 @@ public class GuiJumpReset extends GuiScreen {
             case 200: CombatModules.blockHitEnabled = value; break;
             case 205: CombatModules.jitter = value; break;
             case 206: CombatModules.limitItems = value; break;
+            case 300: CombatModules.hitSelectEnabled = value; break;
         }
     }
 
@@ -183,6 +191,7 @@ public class GuiJumpReset extends GuiScreen {
             case 207: return CombatModules.minDelayMs;
             case 208: return CombatModules.maxDelayMs;
             case 209: return CombatModules.blockDurationMs;
+            case 302: return CombatModules.hitSelectDelayMs;
 
             default: return 0;
         }
@@ -240,12 +249,16 @@ public class GuiJumpReset extends GuiScreen {
             case 209:
                 CombatModules.blockDurationMs = value;
                 break;
+
+            case 302:
+                CombatModules.hitSelectDelayMs = value;
+                break;
         }
     }
 
     private int sliderMin(int id) {
         if (id == 202 || id == 203) return 10;
-        if (id == 209) return 1;
+        if (id == 209 || id == 302) return 50;
         return 0;
     }
 
@@ -255,7 +268,7 @@ public class GuiJumpReset extends GuiScreen {
         if (id == 101) return 60;
         if (id == 102 || id == 103) return 1000;
         if (id == 202 || id == 203) return 300;
-        if (id == 207 || id == 208 || id == 209) return 500;
+        if (id == 207 || id == 208 || id == 209 || id == 302) return 500;
         return 100;
     }
 
@@ -272,6 +285,7 @@ public class GuiJumpReset extends GuiScreen {
             case 200:
             case 205:
             case 206:
+            case 300:
                 return getBool(row.id) ? "ON" : "OFF";
 
             case 1:
@@ -310,6 +324,12 @@ public class GuiJumpReset extends GuiScreen {
 
             case 204:
                 return CombatModules.randomization.name();
+
+            case 301:
+                return CombatModules.hitSelectMode.name();
+
+            case 302:
+                return CombatModules.hitSelectDelayMs + "ms";
 
             default: return "";
         }
@@ -356,6 +376,13 @@ public class GuiJumpReset extends GuiScreen {
         if (id == 204) {
             CombatModules.randomization =
                     CombatModules.randomization.next();
+        }
+
+        if (id == 301) {
+            CombatModules.hitSelectMode =
+                    CombatModules.hitSelectMode == CombatModules.HitSelectMode.MANUAL
+                            ? CombatModules.HitSelectMode.BLATANT
+                            : CombatModules.HitSelectMode.MANUAL;
         }
     }
 
@@ -427,16 +454,16 @@ public class GuiJumpReset extends GuiScreen {
     }
 
     private void drawTabs() {
-        String[] names = {"J", "W", "B"};
+        String[] names = {"J", "W", "B", "H"};
 
         int tabW = 32;
         int gap = 5;
-        int total = tabW * 3 + gap * 2;
+        int total = tabW * 4 + gap * 3;
 
         int startX = panelX + (PANEL_W - total) / 2;
         int y = panelY + 32;
 
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             int x = startX + i * (tabW + gap);
 
             int color = page == i
@@ -464,12 +491,12 @@ public class GuiJumpReset extends GuiScreen {
 
         int tabW = 32;
         int gap = 5;
-        int total = tabW * 3 + gap * 2;
+        int total = tabW * 4 + gap * 3;
         int startX = panelX + (PANEL_W - total) / 2;
         int tabY = panelY + 32;
 
         if (mouseY >= tabY && mouseY <= tabY + 18) {
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < 4; i++) {
                 int x = startX + i * (tabW + gap);
 
                 if (mouseX >= x && mouseX <= x + tabW) {
