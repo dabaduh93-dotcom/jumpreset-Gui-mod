@@ -57,7 +57,11 @@ public class CombatModulesHandler {
 
         if (CombatModules.blockHitEnabled
                 && CombatModules.blockHitMode == CombatModules.BlockHitMode.AUTO) {
-            scheduleBlockPulse(player);
+            // Auto nao acumula ataques enquanto um pulso esta ativo ou aguardando.
+            // Isso evita uma fila de bloqueios atrasados que parece manter o botao preso.
+            if (!blocking && pendingBlockTimes.isEmpty()) {
+                scheduleBlockPulse(player);
+            }
         }
     }
 
